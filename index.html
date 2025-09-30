@@ -1,234 +1,200 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flashcard App</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="utf-8" />
+  <title>Typing Game</title>
+  <style>
+    body { font-family: sans-serif; background:#f7f9fc; padding:20px; }
+    .card { background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:20px; max-width:700px; margin:auto; }
+    .row { display:flex; gap:10px; margin:10px 0; }
+    button { padding:10px 14px; border:0; border-radius:6px; background:#2b8cff; color:#fff; cursor:pointer; }
+    button.secondary { background:#777; }
+    input { flex:1; padding:8px; font-size:16px; border:1px solid #ccc; border-radius:6px; }
+    .result { margin-top:10px; white-space:pre-line; }
+  </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
-    <div id="app" class="bg-blue-50 rounded-3xl p-6 w-full max-w-md shadow-lg">
-        <!-- Category Selector -->
-        <select id="category" class="w-full p-2 mb-4 text-lg rounded-lg bg-blue-600 text-white focus:outline-none">
-            <option value="Danh từ (n)">Danh từ (n)</option>
-            <option value="Tính từ (adj)">Tính từ (adj)</option>
-            <option value="Động từ (v)">Động từ (v)</option>
-            <option value="Trạng từ (adv)">Trạng từ (adv)</option>
-        </select>
-
-        <!-- Word Display -->
-        <div id="word-label" class="text-2xl font-bold text-blue-900 mb-4 text-center">...</div>
-
-        <!-- Input Box -->
-        <input id="answer-input" type="text" placeholder="Nhập nghĩa tiếng Anh" class="w-full p-2 mb-4 text-lg rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
-
-        <!-- Feedback Label -->
-        <div id="feedback-label" class="text-lg font-bold mb-4 text-center"></div>
-
-        <!-- Button Row -->
-        <div class="flex justify-between mb-4">
-            <button id="check-btn" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">✔️ Kiểm tra</button>
-            <button id="show-btn" class="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600">💡 Hiện đáp án</button>
-            <button id="next-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">➡️ Tiếp</button>
-        </div>
-
-        <!-- Progress Label -->
-        <div id="progress-label" class="text-sm text-gray-600 text-center">0/0</div>
+<body>
+<div class="card" id="app">
+  <h2>Typing Game</h2>
+  <div id="menu">
+    <p>Chọn bộ từ:</p>
+    <button onclick="startGame('Danh từ (n)')">Danh từ</button>
+    <button onclick="startGame('Động từ (v)')">Động từ</button>
+    <button onclick="startGame('Tính từ (adj)')">Tính từ</button>
+  </div>
+  <div id="game" style="display:none;">
+    <div id="prompt" style="font-size:20px; font-weight:bold; margin:10px 0;"></div>
+    <div class="row"><input id="inputWord" placeholder="Từ English" /></div>
+    <div class="row"><input id="inputSyll" placeholder="Số âm tiết" /></div>
+    <div class="row">
+      <button onclick="checkWord()">Kiểm tra</button>
+      <button class="secondary" onclick="speakWord()">🔊 Phát âm</button>
+      <button class="secondary" onclick="backMenu()">⤺ Quay lại</button>
     </div>
+    <div class="result" id="result"></div>
+  </div>
+</div>
 
-    <script>
-        // Vocabulary Data
-        const DATA = {
-            "Danh từ (n)": {
-                "thành tựu": ["achievement"],
-                "lợi ích": ["benefit"],
-                "sự gắn bó": ["bond"],
-                "trụ cột gia đình": ["breadwinner"],
-                "tính cách": ["character"],
-                "lựa chọn": ["choice"],
-                "vấn đề khó khăn": ["difficulty"],
-                "lòng biết ơn": ["gratitude"],
-                "thực phẩm tạp hóa": ["grocery"],
-                "mang vác nặng": ["heavy lifting"],
-                "người nội trợ": ["homemaker"],
-                "công việc nhà": ["household chore", "housework"],
-                "quần áo, đồ giặt là": ["laundry"],
-                "danh sách": ["list"],
-                "phong cách, cách ứng xử": ["manner"],
-                "sự tôn trọng": ["respect"],
-                "trách nhiệm": ["responsibility"],
-                "kết quả": ["result"],
-                "công việc hàng ngày": ["routine"],
-                "rác rưởi": ["rubbish"],
-                "sự thành công": ["success"],
-                "hỗ trợ": ["support"],
-                "nhiệm vụ": ["task"],
-                "giá trị": ["value"],
-                "rửa bát": ["washing up"]
-            },
-            "Tính từ (adj)": {
-                "công bằng": ["fair"],
-                "thật thà": ["honest"],
-                "trung thực": ["truthful"]
-            },
-            "Động từ (v)": {
-                "biết ơn, trân trọng": ["appreciate"],
-                "tổ chức tiệc": ["celebrate"],
-                "cổ vũ, làm cho vui lên": ["cheer up"],
-                "nấu ăn": ["cook"],
-                "phá hỏng": ["damage"],
-                "thỏa thuận": ["discuss"],
-                "chia": ["divide"],
-                "trưởng thành": ["grow up"],
-                "kĩ năng sống": ["life skill"],
-                "xoay sở": ["manage"],
-                "chuẩn bị": ["prepare"],
-                "vứt": ["put out"],
-                "nuôi nấng": ["raise"],
-                "hỗ trợ": ["support"]
-            },
-            "Trạng từ (adv)": {
-                "thay cho": ["instead of"],
-                "không tì vết": ["spotlessly"],
-                "nhanh chóng": ["quickly"],
-                "chậm chạp": ["slowly"],
-                "cẩn thận": ["carefully"],
-                "thường xuyên": ["usually"],
-                "hiếm khi": ["rarely"],
-                "luôn luôn": ["always"],
-                "đôi khi": ["sometimes"],
-                "ngày hôm qua": ["yesterday"],
-                "hôm nay": ["today"],
-                "ngày mai": ["tomorrow"]
-            }
-        };
+<script>
+const wordSets = {
+  "Danh từ (n)": {
+"hành động  (n)": ["action"],
+            "hoạt động   (n)": ["activity"],
+            "lời khuyên  (n)": ["advice"],
+            "mục tiêu  (n)": ["aim"],
+            "thiết bị , dụng cụ  (n)": ["appliance"],
+            "bầu không khí   (n)": ["atmosphere"],
+            "khu vực   (n)": ["area"],
+            "nhận thức   (n)": ["awareness"],
+            "chai lọ   (n)": ["bottle"],
+            "cái thùng   (n)": ["bin"],
+            "dấu chân cacbon   (n)": ["carbon footprint"],
+            "lễ kỉ niệm   (n)": ["ceremony"],
+            "sự thay đổi   (n)": ["change"],
+            "hóa chất    (n)": ["chemical"],
+            "câu lạc bộ    (n)": ["club"],
+            "tổn hại thiệt hại   (n)": ["damage"],
+            "thiết bị    (n)": ["device"],
+            "sự khác biệt    (n)": ["difference"],
+            "điện    (n)": ["electricity"],
+            "sự thải ra    (n)": ["emission"],
+            "năng lượng    (n)": ["energy"],
+            "môi trường    (n)": ["environment"],
+            "buổi triển lãm    (n)": ["exhibition"],
+            "vụ nổ   (n)": ["explosion"],
+            "thùng rác   (n)": ["garbage can"],
+            "thói quen   (n)": ["habit"],
+            "vấn đề    (n)": ["issue"],
+            "vận dụng    (n)": ["item"],
+            "lối sống cách sống   (n)": ["lifestyle"],
+            "nguyên liệu    (n)": ["material"],
+            "phương pháp(n)": ["method"],
+            "nguồn tài nguyên thiên nhiên   (n)": ["natural resources"],
+            "khu xóm   (n)": ["neighborhood"],
+            "sự ô nhiễm    (n)": ["pollution"],
+            "sản phẩm   (n)": ["product"],
+            "phương tiện công cộng   (n)": ["public transport"],
+            "bóng râm   (n)": ["shade"],
+            "tình huống  (n)": ["situation"],
+            "lời đề nghị  (n)": ["suggestion"],
+            "nhiệt độ   (n)": ["temperature"],
+            "chai lọ   (n)": ["trash", "rubbish", "waste"],
+  },
+  "Động từ (v)": {
+    "đạt được  (v)": ["achieve"],
+           "đạt được  (v)": ["achieve"],
+            "tham dự (v)": ["attend"],
+            "dựa trên  (v)": ["base on"],
+            "có thể (v)": ["be able to"],
+            "tự hào về (v)": ["be proud of"],
+            "chịu trách nhiệm (v)": ["be responsible for"],
+            "dọn dẹp (v)": ["clear up"],
+            "sưu tầm (v)": ["collect"],
+            "tạo ra (v)": ["crate"],
+            "cắt giảm (v)": ["cut down on"],
+            "khuyến khích (v)": ["encourage"],
+            "ước tính (v)": ["estimate"],
+            "gây hại  (v)": ["harm"],
+            "cait thiện (v)": ["improve"],
+            "tham gia (v)": ["join"],
+            "dẫn đến (v)": ["lead"],
+            "xả rác (v)": ["litter"],
+            "chọn theo (v)": ["adopt"],
+            "chia nhỏ (v)": ["break down"],
+            "tổ chức (v)": ["organize"],
+            "nhặt (v)": ["pick up"],
+            "sản xuất ra (v)": ["produce"],
+            "bảo vệ (v)": ["protect"],
+            "cung cấp(v)": ["provide"],
+            "làm gia tăng (v)": ["raise"],
+            "tái chế (v)": ["recycle"],
+            "làm giảm (v)": ["reduce"],
+            "thành lập (v)": ["set up "],
+            "TẮT  (v)": ["turn off"],
+            "lẵng phí(v)": ["waste"],
+            "tham gia (v)": ["take part in"],
+  },
+  "Tính từ (adj)": {
+    "nguy hiểm(adj)": ["adngerous"],
+            "dơ bẩn(adj)": ["dirty"],
+            "thân thiện môi trường(adj)": ["Eco-friendly"],
+            "thuộc về điện(adj)": ["electrical"],
+            "thuộc về môi trường(adj)": ["environment"],
+            "toàn cầu(adj)": ["global"],
+            "độc hại(adj)": ["harmful"],
+            "tự nhiên(adj)": ["natural"],
+            "hữu cơ(adj)": ["organic"],
+            "cá nhân(adj)": ["personal"],
+            "bị ô nhiễm (adj)": ["polluted"],
+            "chữ qua chế biến(adj)": ["raw"],
+            "có thể làm đầy lại (adj)": ["refillable"],
+            "có thể tái sử dụng (adj)": ["reusable"],
+            "bền vững(adj)": ["sustainable"],
+  }
+};
 
-        // Initialize state
-        let category = "Danh từ (n)";
-        let words = Object.keys(DATA[category]);
-        words.sort(() => Math.random() - 0.5); // Shuffle words
-        let index = 0;
-        let correct = 0;
-        let attempts = 0;
+let currentSet = {}, wordList = [], index=0, reviewList=[];
 
-        // Load audio
-        const soundCorrect = new Audio("applepay.mp3");
-        const soundWrong = new Audio("vine-boom.mp3");
-
-        // DOM elements
-        const categorySelect = document.getElementById("category");
-        const wordLabel = document.getElementById("word-label");
-        const answerInput = document.getElementById("answer-input");
-        const feedbackLabel = document.getElementById("feedback-label");
-        const checkBtn = document.getElementById("check-btn");
-        const showBtn = document.getElementById("show-btn");
-        const nextBtn = document.getElementById("next-btn");
-        const progressLabel = document.getElementById("progress-label");
-
-        // Show current word
-        function showWord() {
-            if (index < words.length) {
-                const current = words[index];
-                wordLabel.textContent = `Từ tiếng Việt: ${current}`;
-                answerInput.value = "";
-                feedbackLabel.innerHTML = "";
-                progressLabel.textContent = `Tiến độ: ${index}/${words.length}`;
-            } else {
-                wordLabel.textContent = "🎉 Đã học xong!";
-                feedbackLabel.innerHTML = `Đúng ${correct}/${attempts}`;
-                progressLabel.textContent = "Hoàn thành";
-            }
-        }
-
-        // Change category
-        categorySelect.addEventListener("change", (e) => {
-            category = e.target.value;
-            words = Object.keys(DATA[category]);
-            words.sort(() => Math.random() - 0.5); // Shuffle words
-            index = 0;
-            correct = 0;
-            attempts = 0;
-            showWord();
-        });
-
-        // Check answer
-        checkBtn.addEventListener("click", () => {
-            if (index < words.length) {
-                const current = words[index];
-                const user = answerInput.value.trim().toLowerCase();
-                const valid = DATA[category][current].map(a => a.toLowerCase());
-
-                attempts++;
-                if (valid.includes(user)) {
-                    correct++;
-                    feedbackLabel.innerHTML = '<span class="text-green-600">✅ Đúng rồi!</span>';
-                    soundCorrect.play();
-                } else {
-                    feedbackLabel.innerHTML = '<span class="text-red-600">❌ Sai, thử lại!</span>';
-                    soundWrong.play();
-                }
-                progressLabel.textContent = `Tiến độ: ${index}/${words.length}`;
-            }
-        });
-
-        // Show answer
-        showBtn.addEventListener("click", () => {
-            if (index < words.length) {
-                const current = words[index];
-                const valid = DATA[category][current];
-                feedbackLabel.innerHTML = `<span class="text-blue-600">Đáp án: ${valid.join(", ")}</span>`;
-            }
-        });
-
-        // Next word
-        nextBtn.addEventListener("click", () => {
-            if (index < words.length) {
-                index++;
-                showWord();
-            }
-        });
-
-        // Initialize
-        showWord();
-    </script>
+function startGame(cat){
+  currentSet = wordSets[cat];
+  wordList = Object.keys(currentSet);
+  shuffle(wordList);
+  index = 0; reviewList = [];
+  document.getElementById("menu").style.display="none";
+  document.getElementById("game").style.display="block";
+  showWord();
+}
+function backMenu(){
+  document.getElementById("menu").style.display="block";
+  document.getElementById("game").style.display="none";
+}
+function showWord(){
+  if(index<wordList.length){
+    document.getElementById("prompt").innerText=wordList[index];
+  } else {
+    if(reviewList.length){
+      wordList=reviewList; reviewList=[]; shuffle(wordList); index=0;
+      document.getElementById("result").innerText="🔄 Ôn tập lại từ sai...";
+      setTimeout(showWord,800);
+    } else {
+      document.getElementById("prompt").innerText="🎉 Hoàn thành!";
+      document.getElementById("result").innerText="";
+    }
+  }
+}
+function checkWord(){
+  if(index>=wordList.length) return;
+  const current = wordList[index];
+  const answers = currentSet[current].map(s=>s.toLowerCase());
+  const correct = answers[0];
+  const userWord=document.getElementById("inputWord").value.trim().toLowerCase();
+  const userSyll=document.getElementById("inputSyll").value.trim();
+  const correctSyll=String(countSyllables(correct));
+  const ipa = "/"+correct+"/"; // fake IPA nếu không gọi API
+  let okWord=answers.includes(userWord), okSyll=(userSyll===correctSyll);
+  if(okWord && okSyll){
+    document.getElementById("result").innerText=`✅ Đúng!\nIPA: ${ipa}\nÂm tiết: ${correctSyll}`;
+  } else {
+    document.getElementById("result").innerText=`❌ Sai!\nĐáp án: ${correct}\nIPA: ${ipa}\nÂm tiết: ${correctSyll}`;
+    if(!reviewList.includes(current)) reviewList.push(current);
+  }
+  document.getElementById("inputWord").value="";
+  document.getElementById("inputSyll").value="";
+  index++;
+  setTimeout(showWord,300);
+}
+function countSyllables(word){
+  let groups=word.toLowerCase().replace(/\s+/g,'').match(/[aeiouy]+/g);
+  return Math.max(1, groups?groups.length:1);
+}
+function shuffle(arr){for(let i=arr.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}}
+function speakWord(){
+  if(index>=wordList.length) return;
+  const current=wordList[index];
+  const text=currentSet[current][0];
+  let u=new SpeechSynthesisUtterance(text);
+  u.lang="en-US"; speechSynthesis.speak(u);
+}
+</script>
 </body>
 </html>
